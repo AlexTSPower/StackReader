@@ -51,8 +51,34 @@ func TestViewer_GlamourFailure_FallsBackToRaw(t *testing.T) {
 	v := NewViewer(80, 24)
 	v2, _ := v.Update(FileSelectedMsg{Path: path})
 
-	// Should have content regardless of whether glamour succeeded
+	// The raw content must be stored so it can be re-rendered on resize and
+	// used as the fallback if glamour rendering fails.
+	if v2.rawContent != content {
+		t.Errorf("rawContent should be stored as %q, got %q", content, v2.rawContent)
+	}
+
+	// Should have content regardless of whether glamour succeeded.
 	if !v2.ready {
 		t.Error("viewer should be ready even if glamour render fails")
+	}
+	if v2.View() == "" {
+		t.Error("expected non-empty view after file selected")
+	}
+
+	// Exercise the fallback path directly: with rawContent set, renderContent
+	// always returns the raw text if glamour fails, so the returned string must
+	// contain the original content. When glamour succeeds the heading text is
+	// still present in the styled output. Either way, the content is preserved.
+	rendered := v2.renderContent()
+	if !strings.Contains(rendered, "Heading") {
+		t.Errorf("renderContent output should preserve content, got: %q", rendered)
+	}
+
+	// renderContent with empty rawContent returns empty (the explicit fallback
+	// guard). This is the one fallback branch we can trigger deterministically;
+	// glamour cannot be forced to error reliably in a headless test.
+	empty := NewViewer(80, 24)
+	if empty.renderContent() != "" {
+		t.Error("renderContent should return empty string when rawContent is empty")
 	}
 }

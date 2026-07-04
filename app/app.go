@@ -76,6 +76,15 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.showSidebar = !a.showSidebar
 			a = a.applyLayout()
 			return a, nil
+		case "tab":
+			if a.sidebarWidth() > 0 {
+				if a.focus == focusBrowser {
+					a.focus = focusViewer
+				} else {
+					a.focus = focusBrowser
+				}
+			}
+			return a, nil
 		case "i":
 			if a.currentFile == "" {
 				return a, nil
@@ -92,7 +101,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return FileSelectedMsg{Path: file}
 			})
 		default:
-			if a.focus == focusBrowser {
+			if a.focus == focusBrowser && a.sidebarWidth() > 0 {
 				var cmd tea.Cmd
 				a.browser, cmd = a.browser.Update(msg)
 				return a, cmd
@@ -125,7 +134,7 @@ func (a App) View() string {
 		Padding(0, 1).
 		Render(title)
 
-	help := "[b] browser  [i] edit  [q] quit  [↑↓/jk] scroll"
+	help := "[b] browser  [tab] focus  [i] edit  [q] quit  [↑↓/jk] scroll"
 	if a.statusMsg != "" {
 		help = a.statusMsg
 	}
@@ -175,7 +184,8 @@ func (a App) sidebarWidth() int {
 	return w
 }
 
-// applyLayout recalculates and pushes dimensions to child models.
+// applyLayout recalculates and forwards dimensions to child models via their
+// Update methods (rather than poking their internals directly).
 func (a App) applyLayout() App {
 	sw := a.sidebarWidth()
 	vw := a.width - sw
@@ -183,12 +193,15 @@ func (a App) applyLayout() App {
 		vw--
 	}
 	contentH := a.height - 2
+
+	var cmd tea.Cmd
 	// Only resize the browser when the sidebar is visible; calling
 	// SetSize(0, h) can cause display issues in the list component.
 	if sw > 0 {
-		a.browser.list.SetSize(sw, contentH)
+		a.browser, cmd = a.browser.Update(tea.WindowSizeMsg{Width: sw, Height: contentH})
+		_ = cmd
 	}
-	a.viewer.viewport.Width = vw
-	a.viewer.viewport.Height = contentH
+	a.viewer, cmd = a.viewer.Update(tea.WindowSizeMsg{Width: vw, Height: contentH})
+	_ = cmd
 	return a
 }
