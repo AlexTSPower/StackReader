@@ -9,6 +9,87 @@ import (
 	"github.com/charmbracelet/glamour"
 )
 
+// mdvStyle is a custom glamour style based on the dark theme with improved
+// heading hierarchy (no raw ## prefix, colour+underline per level) and better
+// code-block contrast.
+const mdvStyle = `{
+  "document": { "margin": 2, "block_suffix": "\n" },
+  "block_quote": { "indent": 1, "indent_token": "│ ", "color": "244" },
+  "list": { "level_indent": 2 },
+  "heading": { "block_suffix": "\n", "bold": true },
+  "h1": {
+    "prefix": " ", "suffix": " ",
+    "background_color": "57", "color": "230", "bold": true
+  },
+  "h2": { "color": "14",  "bold": true, "underline": true, "block_prefix": "\n" },
+  "h3": { "color": "12",  "bold": true },
+  "h4": { "color": "75",  "bold": true },
+  "h5": { "color": "33" },
+  "h6": { "color": "33",  "italic": true },
+  "strikethrough": { "crossed_out": true },
+  "emph":   { "italic": true, "color": "252" },
+  "strong": { "bold": true,   "color": "252" },
+  "hr": {
+    "color": "240",
+    "format": "\n------------------------------------------------------------------------\n"
+  },
+  "item":        { "block_prefix": "• " },
+  "enumeration": { "block_prefix": ". " },
+  "task": { "ticked": "✓ ", "unticked": "✗ " },
+  "link":       { "color": "33", "underline": true },
+  "link_text":  { "color": "39", "bold": true },
+  "image":      { "color": "33", "underline": true },
+  "image_text": { "color": "243", "format": "Image: {{.text}}" },
+  "code":       { "background_color": "236", "color": "203" },
+  "code_block": {
+    "background_color": "235",
+    "color": "244",
+    "padding": 1,
+    "margin": 2,
+    "chroma": {
+      "text":                   { "color": "C4C4C4" },
+      "error":                  { "color": "F1F1F1", "background_color": "F05B5B" },
+      "comment":                { "color": "888888" },
+      "comment_preproc":        { "color": "FF875F" },
+      "comment_special":        { "color": "FF5F87" },
+      "keyword":                { "bold": true },
+      "keyword_declaration":    { "color": "FF875F" },
+      "keyword_namespace":      { "color": "FF875F" },
+      "keyword_type":           { "color": "6E6ED8" },
+      "operator":               { "color": "EF8080" },
+      "punctuation":            { "color": "E8E8A8" },
+      "name":                   { "color": "C4C4C4" },
+      "name_builtin":           { "color": "FF875F" },
+      "name_tag":               { "color": "B083EA" },
+      "name_attribute":         { "color": "7EC4CF" },
+      "name_class":             { "bold": true, "color": "FF875F" },
+      "name_constant":          { "color": "FF875F" },
+      "name_decorator":         { "color": "FF875F" },
+      "name_exception":         { "color": "FF875F" },
+      "name_function":          { "color": "FF875F" },
+      "name_other":             { "color": "FF875F" },
+      "name_label":             { "color": "FF875F" },
+      "literal_number":         { "color": "6EEFC0" },
+      "literal_string":         { "color": "6EEFC0" },
+      "literal_string_escape":  { "bold": true, "color": "FF875F" },
+      "generic_heading":        { "bold": true },
+      "generic_subheading":     { "color": "777777" },
+      "generic_deleted":        { "color": "F92672" },
+      "generic_emph":           { "italic": true },
+      "generic_inserted":       { "color": "A6E22E" },
+      "generic_strong":         { "bold": true },
+      "generic_output":         { "color": "777777" },
+      "background":             { "background_color": "235" }
+    }
+  },
+  "table": {
+    "center_separator": "┼",
+    "column_separator": "│",
+    "row_separator":    "─"
+  },
+  "definition_description": { "block_prefix": "\n→ " }
+}`
+
 // Viewer renders a single markdown file in a scrollable viewport.
 type Viewer struct {
 	viewport   viewport.Model
@@ -30,7 +111,7 @@ func (v Viewer) renderContent() string {
 		return ""
 	}
 	r, err := glamour.NewTermRenderer(
-		glamour.WithStandardStyle("dark"),
+		glamour.WithStylesFromJSONBytes([]byte(mdvStyle)),
 		glamour.WithWordWrap(v.viewport.Width),
 	)
 	if err != nil {

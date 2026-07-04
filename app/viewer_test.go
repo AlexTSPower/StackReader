@@ -42,6 +42,26 @@ func TestViewer_UnreadableFile_ShowsError(t *testing.T) {
 	}
 }
 
+func TestViewer_H2HeadingHasNoLiteralPrefix(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.md")
+	os.WriteFile(path, []byte("## Section Title\n\nContent"), 0644)
+
+	v := NewViewer(80, 24)
+	v2, _ := v.Update(FileSelectedMsg{Path: path})
+	rendered := v2.renderContent()
+
+	// Custom style removes the raw "## " prefix — headings are styled, not prefixed.
+	if strings.Contains(rendered, "## Section") {
+		t.Error("H2 should not contain literal ## prefix in rendered output")
+	}
+	// Glamour may split the heading text across multiple ANSI spans, so check
+	// for each word individually.
+	if !strings.Contains(rendered, "Section") || !strings.Contains(rendered, "Title") {
+		t.Errorf("H2 text should be present in rendered output, got: %q", rendered)
+	}
+}
+
 func TestViewer_GlamourFailure_FallsBackToRaw(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "raw.md")

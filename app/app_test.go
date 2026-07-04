@@ -3,6 +3,7 @@ package app
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -59,18 +60,20 @@ func TestApp_EditKey_NoopWhenNoFileOpen(t *testing.T) {
 	}
 }
 
-func TestApp_EditKey_ErrorWhenEditorNotSet(t *testing.T) {
+func TestApp_EditKey_ErrorWhenEditorNotFound(t *testing.T) {
 	a := newTestApp(t)
 	a.currentFile = "/some/file.md"
-	os.Unsetenv("EDITOR")
+	t.Setenv("EDITOR", "")
 
-	model, cmd := a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("i")})
+	// Override candidates so no real editor is found.
+	orig := editorCandidates
+	editorCandidates = []string{"__no_such_editor_1234__"}
+	defer func() { editorCandidates = orig }()
+
+	model, _ := a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("i")})
 	a2 := model.(App)
-	if cmd != nil {
-		t.Error("expected nil command when $EDITOR is not set")
-	}
 	if a2.statusMsg == "" {
-		t.Error("expected an error status message when $EDITOR is not set")
+		t.Error("expected an error status message when no editor found")
 	}
 }
 
@@ -91,5 +94,120 @@ func TestApp_FileSelectedMsg_FocusesViewer(t *testing.T) {
 	}
 	if a2.currentFile != path {
 		t.Errorf("currentFile should be %q, got %q", path, a2.currentFile)
+	}
+}
+
+// --- editor fallback ---
+
+func TestFindEditor_UsesEditorEnv(t *testing.T) {
+	t.Setenv("EDITOR", "/usr/bin/env")
+	path, err := findEditor()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if path != "/usr/bin/env" {
+		t.Errorf("got %q, want /usr/bin/env", path)
+	}
+}
+
+func TestFindEditor_FallsBackToCandidate(t *testing.T) {
+	t.Setenv("EDITOR", "")
+
+	// Use /bin/sh as a guaranteed-present candidate.
+	orig := editorCandidates
+	editorCandidates = []string{"__missing__", "sh"}
+	defer func() { editorCandidates = orig }()
+
+	path, err := findEditor()
+	if err != nil {
+		t.Fatalf("expected a fallback editor, got error: %v", err)
+	}
+	if path == "" {
+		t.Error("expected a non-empty path from fallback")
+	}
+}
+
+func TestFindEditor_ErrorWhenNoneFound(t *testing.T) {
+	t.Setenv("EDITOR", "")
+
+	orig := editorCandidates
+	editorCandidates = []string{"__no_such_editor_a__", "__no_such_editor_b__"}
+	defer func() { editorCandidates = orig }()
+
+	_, err := findEditor()
+	if err == nil {
+		t.Error("expected error when no editor is found")
+	}
+}
+
+// --- status message auto-clear ---
+
+func TestApp_StatusMsg_ClearsOnClearMsg(t *testing.T) {
+	a := newTestApp(t)
+	a.statusMsg = "some error"
+
+	model, _ := a.Update(clearStatusMsg{})
+	a2 := model.(App)
+	if a2.statusMsg != "" {
+		t.Errorf("statusMsg should be cleared by clearStatusMsg, got %q", a2.statusMsg)
+	}
+}
+
+func TestApp_EditKey_StatusMsgSchedulesClear(t *testing.T) {
+	a := newTestApp(t)
+	a.currentFile = "/some/file.md"
+	t.Setenv("EDITOR", "")
+
+	orig := editorCandidates
+	editorCandidates = []string{"__no_such_editor_1234__"}
+	defer func() { editorCandidates = orig }()
+
+	_, cmd := a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("i")})
+	// A tick command must be returned so the status bar eventually clears.
+	if cmd == nil {
+		t.Error("expected a tick command to auto-clear the status message")
+	}
+}
+
+// --- tab focus indicator ---
+
+func TestApp_TabKey_CyclesFocus(t *testing.T) {
+	a := newTestApp(t)
+	if a.focus != focusBrowser {
+		t.Fatal("focus should start on browser")
+	}
+
+	model, _ := a.Update(tea.KeyMsg{Type: tea.KeyTab})
+	a2 := model.(App)
+	if a2.focus != focusViewer {
+		t.Error("tab should move focus to viewer")
+	}
+
+	model, _ = a2.Update(tea.KeyMsg{Type: tea.KeyTab})
+	a3 := model.(App)
+	if a3.focus != focusBrowser {
+		t.Error("tab should cycle back to browser")
+	}
+}
+
+func TestApp_TabFocus_ViewReflectsFocus(t *testing.T) {
+	a := newTestApp(t)
+	viewBrowser := a.View()
+
+	model, _ := a.Update(tea.KeyMsg{Type: tea.KeyTab})
+	a2 := model.(App)
+	viewViewer := a2.View()
+
+	// The border colour and status bar label change, so the views must differ.
+	if viewBrowser == viewViewer {
+		t.Error("View() should differ when focus changes (border colour and status label)")
+	}
+
+	// Status bar should indicate the focused panel name.
+	if !strings.Contains(viewBrowser, "browser") {
+		t.Error("status bar should say 'browser' when browser is focused")
+	}
+	if !strings.Contains(viewViewer, "viewer") {
+		t.Error("status bar should say 'viewer' when viewer is focused")
 	}
 }

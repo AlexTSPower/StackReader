@@ -1,9 +1,11 @@
 package app
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -22,6 +24,27 @@ const (
 	focusBrowser focusTarget = iota
 	focusViewer
 )
+
+// clearStatusMsg is sent by the auto-dismiss tick to clear the status bar.
+type clearStatusMsg struct{}
+
+// editorCandidates is the fallback order when $EDITOR is not set.
+// Declared as a var so tests can override it.
+var editorCandidates = []string{"nvim", "vim", "nano"}
+
+// findEditor returns the editor binary to launch: $EDITOR if set, else the
+// first installed candidate from editorCandidates.
+func findEditor() (string, error) {
+	if e := os.Getenv("EDITOR"); e != "" {
+		return e, nil
+	}
+	for _, name := range editorCandidates {
+		if path, err := exec.LookPath(name); err == nil {
+			return path, nil
+		}
+	}
+	return "", errors.New("no editor found; install nvim, vim, or nano, or set $EDITOR")
+}
 
 // App is the root bubbletea model. It owns layout and routes messages.
 type App struct {
@@ -51,6 +74,12 @@ func New(root string) (App, error) {
 
 func (a App) Init() tea.Cmd { return nil }
 
+// setStatus sets a status bar message and schedules auto-clear after 3 s.
+func (a App) setStatus(msg string) (App, tea.Cmd) {
+	a.statusMsg = msg
+	return a, tea.Tick(3*time.Second, func(time.Time) tea.Msg { return clearStatusMsg{} })
+}
+
 // Update handles all messages for the App.
 func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -67,6 +96,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		a.viewer, cmd = a.viewer.Update(msg)
 		return a, cmd
+
+	case clearStatusMsg:
+		a.statusMsg = ""
+		return a, nil
 
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -89,10 +122,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if a.currentFile == "" {
 				return a, nil
 			}
-			editor := os.Getenv("EDITOR")
-			if editor == "" {
-				a.statusMsg = "Error: $EDITOR is not set"
-				return a, nil
+			editor, err := findEditor()
+			if err != nil {
+				return a.setStatus("Error: " + err.Error())
 			}
 			a.statusMsg = ""
 			file := a.currentFile
@@ -134,9 +166,16 @@ func (a App) View() string {
 		Padding(0, 1).
 		Render(title)
 
-	help := "[b] browser  [tab] focus  [i] edit  [q] quit  [↑↓/jk] scroll"
+	help := "[b] sidebar  [tab] focus  [i] edit  [q] quit  [↑↓/jk] scroll"
 	if a.statusMsg != "" {
 		help = a.statusMsg
+	} else if sw > 0 {
+		// Show which panel currently has focus.
+		focusLabel := "browser"
+		if a.focus == focusViewer {
+			focusLabel = "viewer"
+		}
+		help += "  │ " + focusLabel
 	}
 	statusBar := lipgloss.NewStyle().
 		Width(a.width).
@@ -147,12 +186,17 @@ func (a App) View() string {
 
 	var body string
 	if sw > 0 {
+		// Highlight the sidebar border when the browser has focus.
+		borderColor := lipgloss.Color("238")
+		if a.focus == focusBrowser {
+			borderColor = lipgloss.Color("62")
+		}
 		sidebar := lipgloss.NewStyle().
 			Width(sw).
 			Height(contentH).
 			BorderRight(true).
 			BorderStyle(lipgloss.NormalBorder()).
-			BorderForeground(lipgloss.Color("238")).
+			BorderForeground(borderColor).
 			Render(a.browser.View())
 		viewer := lipgloss.NewStyle().
 			Width(vw).
