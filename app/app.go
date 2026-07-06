@@ -97,7 +97,10 @@ func NewSingleFile(path string, watch bool) (App, error) {
 		if err != nil {
 			return App{}, err
 		}
-		if err := w.Add(absPath); err != nil {
+		// Watch the parent directory: atomic-save editors rename a temp file over the
+		// target, which would destroy a file-level watch. Directory-level watching
+		// survives the rename.
+		if err := w.Add(filepath.Dir(absPath)); err != nil {
 			w.Close()
 			return App{}, err
 		}
@@ -115,7 +118,7 @@ func (a App) Init() tea.Cmd {
 		func() tea.Msg { return FileSelectedMsg{Path: path} },
 	}
 	if a.watcher != nil {
-		cmds = append(cmds, watchFileCmd(a.watcher))
+		cmds = append(cmds, watchFileCmd(a.watcher, a.singleFile))
 	}
 	return tea.Batch(cmds...)
 }
@@ -126,10 +129,12 @@ func (a App) setStatus(msg string) (App, tea.Cmd) {
 	return a, tea.Tick(3*time.Second, func(time.Time) tea.Msg { return clearStatusMsg{} })
 }
 
-// watchFileCmd returns a Cmd that blocks until a Write or Create event fires on
-// the watched file, then returns fileChangedMsg. Must be re-issued after each
-// event to keep the watch loop running.
-func watchFileCmd(w *fsnotify.Watcher) tea.Cmd {
+// watchFileCmd returns a Cmd that blocks until a Write, Create, or Rename event
+// fires on the target file, then returns fileChangedMsg. Must be re-issued after
+// each event to keep the watch loop running. targetPath must be an absolute,
+// cleaned path. The watcher watches the parent directory so atomic-save editors
+// (vim, nvim) that rename a temp file over the target don't lose the watch.
+func watchFileCmd(w *fsnotify.Watcher, targetPath string) tea.Cmd {
 	return func() tea.Msg {
 		for {
 			select {
@@ -137,7 +142,11 @@ func watchFileCmd(w *fsnotify.Watcher) tea.Cmd {
 				if !ok {
 					return nil
 				}
-				if event.Has(fsnotify.Write) || event.Has(fsnotify.Create) {
+				// Directory watching picks up all files; filter to ours only.
+				if filepath.Clean(event.Name) != targetPath {
+					continue
+				}
+				if event.Has(fsnotify.Write) || event.Has(fsnotify.Create) || event.Has(fsnotify.Rename) {
 					return fileChangedMsg{}
 				}
 			case _, ok := <-w.Errors:
@@ -171,12 +180,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case fileChangedMsg:
+		a.currentFile = a.singleFile // guard against startup race with FileSelectedMsg
 		// Re-read the file and re-render, then re-arm the watcher.
 		var cmd tea.Cmd
 		a.viewer, cmd = a.viewer.Update(FileSelectedMsg{Path: a.singleFile})
 		var wCmd tea.Cmd
 		if a.watcher != nil {
-			wCmd = watchFileCmd(a.watcher)
+			wCmd = watchFileCmd(a.watcher, a.singleFile)
 		}
 		return a, tea.Batch(cmd, wCmd)
 
@@ -237,9 +247,9 @@ func (a App) View() string {
 	}
 	contentH := a.height - 2 // title + status bars
 
-	title := "mdv"
+	title := "stackreader"
 	if a.currentFile != "" {
-		title = "mdv — " + filepath.Base(a.currentFile)
+		title = "stackreader — " + filepath.Base(a.currentFile)
 	}
 	titleBar := lipgloss.NewStyle().
 		Width(a.width).
