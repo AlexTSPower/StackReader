@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/fsnotify/fsnotify"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -27,6 +28,9 @@ const (
 
 // clearStatusMsg is sent by the auto-dismiss tick to clear the status bar.
 type clearStatusMsg struct{}
+
+// fileChangedMsg is sent by the fsnotify watcher when the open file changes.
+type fileChangedMsg struct{}
 
 // editorCandidates is the fallback order when $EDITOR is not set.
 // Declared as a var so tests can override it.
@@ -56,7 +60,8 @@ type App struct {
 	focus       focusTarget
 	currentFile string
 	statusMsg   string
-	singleFile  string // non-empty when started with a file argument
+	singleFile  string           // non-empty when started with a file argument
+	watcher     *fsnotify.Watcher // non-nil when --watch is active
 }
 
 // New constructs the root App model rooted at root.
@@ -74,18 +79,31 @@ func New(root string) (App, error) {
 }
 
 // NewSingleFile constructs an App in single-file mode: no browser, viewer fills
-// the full terminal. watch is stored for use in Task 3; pass false for now.
+// the full terminal. When watch is true, an fsnotify watcher is created and
+// the app will auto-reload the file whenever it changes on disk.
 func NewSingleFile(path string, watch bool) (App, error) {
 	absPath, err := filepath.Abs(path)
 	if err != nil {
 		return App{}, err
 	}
-	return App{
+	a := App{
 		viewer:      NewViewer(80, 20),
 		showSidebar: false,
 		focus:       focusViewer,
 		singleFile:  absPath,
-	}, nil
+	}
+	if watch {
+		w, err := fsnotify.NewWatcher()
+		if err != nil {
+			return App{}, err
+		}
+		if err := w.Add(absPath); err != nil {
+			w.Close()
+			return App{}, err
+		}
+		a.watcher = w
+	}
+	return a, nil
 }
 
 func (a App) Init() tea.Cmd {
@@ -93,13 +111,42 @@ func (a App) Init() tea.Cmd {
 		return nil
 	}
 	path := a.singleFile
-	return func() tea.Msg { return FileSelectedMsg{Path: path} }
+	cmds := []tea.Cmd{
+		func() tea.Msg { return FileSelectedMsg{Path: path} },
+	}
+	if a.watcher != nil {
+		cmds = append(cmds, watchFileCmd(a.watcher))
+	}
+	return tea.Batch(cmds...)
 }
 
 // setStatus sets a status bar message and schedules auto-clear after 3 s.
 func (a App) setStatus(msg string) (App, tea.Cmd) {
 	a.statusMsg = msg
 	return a, tea.Tick(3*time.Second, func(time.Time) tea.Msg { return clearStatusMsg{} })
+}
+
+// watchFileCmd returns a Cmd that blocks until a Write or Create event fires on
+// the watched file, then returns fileChangedMsg. Must be re-issued after each
+// event to keep the watch loop running.
+func watchFileCmd(w *fsnotify.Watcher) tea.Cmd {
+	return func() tea.Msg {
+		for {
+			select {
+			case event, ok := <-w.Events:
+				if !ok {
+					return nil
+				}
+				if event.Has(fsnotify.Write) || event.Has(fsnotify.Create) {
+					return fileChangedMsg{}
+				}
+			case _, ok := <-w.Errors:
+				if !ok {
+					return nil
+				}
+			}
+		}
+	}
 }
 
 // Update handles all messages for the App.
@@ -122,6 +169,16 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case clearStatusMsg:
 		a.statusMsg = ""
 		return a, nil
+
+	case fileChangedMsg:
+		// Re-read the file and re-render, then re-arm the watcher.
+		var cmd tea.Cmd
+		a.viewer, cmd = a.viewer.Update(FileSelectedMsg{Path: a.singleFile})
+		var wCmd tea.Cmd
+		if a.watcher != nil {
+			wCmd = watchFileCmd(a.watcher)
+		}
+		return a, tea.Batch(cmd, wCmd)
 
 	case tea.KeyMsg:
 		switch msg.String() {

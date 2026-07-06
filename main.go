@@ -27,8 +27,6 @@ func main() {
 			paths = append(paths, arg)
 		}
 	}
-	_ = watchFlag // used in Task 3
-
 	path := "."
 	if len(paths) > 0 {
 		path = paths[0]
@@ -49,7 +47,7 @@ func main() {
 			fmt.Fprintf(os.Stderr, "stackreader: not a markdown file or directory\n")
 			os.Exit(1)
 		}
-		model, err = app.NewSingleFile(path, false) // watch wired in Task 3
+		model, err = app.NewSingleFile(path, watchFlag)
 	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "stackreader: %v\n", err)

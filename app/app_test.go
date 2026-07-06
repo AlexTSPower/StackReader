@@ -255,6 +255,39 @@ func TestApp_NewSingleFile_InitSendsFileSelectedMsg(t *testing.T) {
 	}
 }
 
+func TestApp_FileChangedMsg_ReloadsViewer(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.md")
+	os.WriteFile(path, []byte("# Version 1"), 0644)
+
+	a, err := NewSingleFile(path, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Apply dimensions so the viewer is usable.
+	model, _ := a.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	a2 := model.(App)
+
+	// Simulate file load via Init message.
+	model, _ = a2.Update(FileSelectedMsg{Path: path})
+	a3 := model.(App)
+
+	// Update the file on disk.
+	os.WriteFile(path, []byte("# Version 2"), 0644)
+
+	// Send fileChangedMsg — viewer should reload from disk.
+	model, _ = a3.Update(fileChangedMsg{})
+	a4 := model.(App)
+
+	// Glamour splits heading text across multiple ANSI spans so
+	// strings.Contains(view, "Version 2") is unreliable; rawContent stores the
+	// unprocessed file bytes and is the authoritative signal that the file was
+	// re-read from disk.
+	if !strings.Contains(a4.viewer.rawContent, "Version 2") {
+		t.Errorf("viewer should show updated content after fileChangedMsg, got rawContent: %q", a4.viewer.rawContent)
+	}
+}
+
 func TestApp_SingleFileMode_BKeyIsNoop(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.md")
