@@ -79,7 +79,7 @@ const mdvStyle = `{
       "generic_inserted":       { "color": "#A6E22E" },
       "generic_strong":         { "bold": true },
       "generic_output":         { "color": "#777777" },
-      "background":             { "background_color": "235" }
+      "background":             { "background_color": "#262626" }
     }
   },
   "table": {

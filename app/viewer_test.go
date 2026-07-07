@@ -62,6 +62,22 @@ func TestViewer_H2HeadingHasNoLiteralPrefix(t *testing.T) {
 	}
 }
 
+func TestViewer_CodeBlock_NoPanic(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "code.md")
+	// Fenced code block with language tag exercises the chroma syntax-highlighting
+	// path. All chroma style colors must be valid hex (#RRGGBB) or this panics.
+	content := "# Test\n\n```go\npackage main\n\nfunc main() {\n\tfmt.Println(\"hello\")\n}\n```\n"
+	os.WriteFile(path, []byte(content), 0644)
+
+	v := NewViewer(80, 24)
+	v2, _ := v.Update(FileSelectedMsg{Path: path})
+	rendered := v2.renderContent()
+	if rendered == "" {
+		t.Error("expected non-empty rendered output for file with code block")
+	}
+}
+
 func TestViewer_GlamourFailure_FallsBackToRaw(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "raw.md")
