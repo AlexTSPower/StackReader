@@ -15,6 +15,7 @@ var version = "dev"
 func main() {
 	// Collect non-flag args; handle --version/-v early.
 	var watchFlag bool
+	var noChrome bool
 	var paths []string
 	for _, arg := range os.Args[1:] {
 		switch arg {
@@ -23,6 +24,8 @@ func main() {
 			return
 		case "--watch":
 			watchFlag = true
+		case "--no-chrome":
+			noChrome = true
 		default:
 			paths = append(paths, arg)
 		}
@@ -47,7 +50,7 @@ func main() {
 			fmt.Fprintf(os.Stderr, "stackreader: not a markdown file or directory\n")
 			os.Exit(1)
 		}
-		model, err = app.NewSingleFile(path, watchFlag)
+		model, err = app.NewSingleFile(path, watchFlag, noChrome)
 	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "stackreader: %v\n", err)

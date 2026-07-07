@@ -60,8 +60,9 @@ type App struct {
 	focus       focusTarget
 	currentFile string
 	statusMsg   string
-	singleFile  string           // non-empty when started with a file argument
+	singleFile  string            // non-empty when started with a file argument
 	watcher     *fsnotify.Watcher // non-nil when --watch is active
+	noChrome    bool              // when true, suppress title bar and status bar
 }
 
 // New constructs the root App model rooted at root.
@@ -80,8 +81,10 @@ func New(root string) (App, error) {
 
 // NewSingleFile constructs an App in single-file mode: no browser, viewer fills
 // the full terminal. When watch is true, an fsnotify watcher is created and
-// the app will auto-reload the file whenever it changes on disk.
-func NewSingleFile(path string, watch bool) (App, error) {
+// the app will auto-reload the file whenever it changes on disk. When noChrome
+// is true, the title bar and status bar are suppressed so only the rendered
+// markdown is shown.
+func NewSingleFile(path string, watch bool, noChrome bool) (App, error) {
 	absPath, err := filepath.Abs(path)
 	if err != nil {
 		return App{}, err
@@ -91,6 +94,7 @@ func NewSingleFile(path string, watch bool) (App, error) {
 		showSidebar: false,
 		focus:       focusViewer,
 		singleFile:  absPath,
+		noChrome:    noChrome,
 	}
 	if watch {
 		w, err := fsnotify.NewWatcher()
@@ -245,7 +249,40 @@ func (a App) View() string {
 	if sw > 0 {
 		vw-- // separator column
 	}
-	contentH := a.height - 2 // title + status bars
+	contentH := a.height
+	if !a.noChrome {
+		contentH -= 2 // title + status bars
+	}
+
+	var body string
+	if sw > 0 {
+		// Highlight the sidebar border when the browser has focus.
+		borderColor := lipgloss.Color("238")
+		if a.focus == focusBrowser {
+			borderColor = lipgloss.Color("62")
+		}
+		sidebar := lipgloss.NewStyle().
+			Width(sw).
+			Height(contentH).
+			BorderRight(true).
+			BorderStyle(lipgloss.NormalBorder()).
+			BorderForeground(borderColor).
+			Render(a.browser.View())
+		viewer := lipgloss.NewStyle().
+			Width(vw).
+			Height(contentH).
+			Render(a.viewer.View())
+		body = lipgloss.JoinHorizontal(lipgloss.Top, sidebar, viewer)
+	} else {
+		body = lipgloss.NewStyle().
+			Width(a.width).
+			Height(contentH).
+			Render(a.viewer.View())
+	}
+
+	if a.noChrome {
+		return body
+	}
 
 	title := "stackreader"
 	if a.currentFile != "" {
@@ -276,32 +313,6 @@ func (a App) View() string {
 		Padding(0, 1).
 		Render(help)
 
-	var body string
-	if sw > 0 {
-		// Highlight the sidebar border when the browser has focus.
-		borderColor := lipgloss.Color("238")
-		if a.focus == focusBrowser {
-			borderColor = lipgloss.Color("62")
-		}
-		sidebar := lipgloss.NewStyle().
-			Width(sw).
-			Height(contentH).
-			BorderRight(true).
-			BorderStyle(lipgloss.NormalBorder()).
-			BorderForeground(borderColor).
-			Render(a.browser.View())
-		viewer := lipgloss.NewStyle().
-			Width(vw).
-			Height(contentH).
-			Render(a.viewer.View())
-		body = lipgloss.JoinHorizontal(lipgloss.Top, sidebar, viewer)
-	} else {
-		body = lipgloss.NewStyle().
-			Width(a.width).
-			Height(contentH).
-			Render(a.viewer.View())
-	}
-
 	return lipgloss.JoinVertical(lipgloss.Left, titleBar, body, statusBar)
 }
 
@@ -328,7 +339,10 @@ func (a App) applyLayout() App {
 	if sw > 0 {
 		vw--
 	}
-	contentH := a.height - 2
+	contentH := a.height
+	if !a.noChrome {
+		contentH -= 2
+	}
 
 	var cmd tea.Cmd
 	// Only resize the browser when the sidebar is visible; calling

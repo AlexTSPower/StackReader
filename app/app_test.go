@@ -217,7 +217,7 @@ func TestApp_NewSingleFile_NoSidebar(t *testing.T) {
 	path := filepath.Join(dir, "test.md")
 	os.WriteFile(path, []byte("# Hello"), 0644)
 
-	a, err := NewSingleFile(path, false)
+	a, err := NewSingleFile(path, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -237,7 +237,7 @@ func TestApp_NewSingleFile_InitSendsFileSelectedMsg(t *testing.T) {
 	path := filepath.Join(dir, "test.md")
 	os.WriteFile(path, []byte("# Hello"), 0644)
 
-	a, err := NewSingleFile(path, false)
+	a, err := NewSingleFile(path, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -260,7 +260,7 @@ func TestApp_FileChangedMsg_ReloadsViewer(t *testing.T) {
 	path := filepath.Join(dir, "test.md")
 	os.WriteFile(path, []byte("# Version 1"), 0644)
 
-	a, err := NewSingleFile(path, false)
+	a, err := NewSingleFile(path, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -293,7 +293,7 @@ func TestApp_SingleFileMode_BKeyIsNoop(t *testing.T) {
 	path := filepath.Join(dir, "test.md")
 	os.WriteFile(path, []byte("# Hello"), 0644)
 
-	a, err := NewSingleFile(path, false)
+	a, err := NewSingleFile(path, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
